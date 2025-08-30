@@ -48,10 +48,11 @@ app.post('/convert', upload.single('video'), (req, res) => {
     console.log('Convertendo:', inputPath);
     
     ffmpeg(inputPath)
-        .outputOptions([
-            '-vf', 'fps=30,scale=300:-1:flags=lanczos',
-            '-loop', '0'
-        ])
+       .outputOptions([
+    '-vf', 'fps=30,scale=300:-1:flags=lanczos,format=rgba,split[s0][s1];[s0]palettegen=reserve_transparent=1:transparency_color=000000[p];[s1][p]paletteuse=alpha_threshold=128',
+    '-gifflags', '+transdiff',
+    '-loop', '0'
+])
         .output(outputPath)
         .on('end', () => {
             console.log('Conversao concluida');
@@ -82,3 +83,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Servidor rodando na porta ${PORT}`);
 });
+

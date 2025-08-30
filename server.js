@@ -53,53 +53,66 @@ app.post('/convert', upload.single('video'), (req, res) => {
     }
 
     const inputPath = req.file.path;
+    const paletteePath = inputPath + '_palette.png';
     const outputPath = inputPath + '.gif';
     
-    console.log('Convertendo arquivo:', inputPath, 'tamanho:', req.file.size);
+    console.log('Convertendo com transparência:', inputPath);
     
-    // Versão simplificada que funciona
+    // Primeiro: gerar paleta com transparência
     ffmpeg(inputPath)
         .outputOptions([
-            '-vf', 'fps=10,scale=300:300:force_original_aspect_ratio=decrease,pad=300:300:(ow-iw)/2:(oh-ih)/2:color=0x00000000@0',
-            '-f', 'gif',
-            '-loop', '0',
+            '-vf', 'fps=10,scale=300:300:force_original_aspect_ratio=decrease,pad=300:300:(ow-iw)/2:(oh-ih)/2:color=0x00000000@0,palettegen=reserve_transparent=on:transparency_color=000000',
             '-y'
         ])
-        .output(outputPath)
-        .on('start', (cmd) => {
-            console.log('FFmpeg iniciado:', cmd);
-        })
-        .on('stderr', (stderrLine) => {
-            console.log('FFmpeg stderr:', stderrLine);
-        })
+        .output(paletteePath)
         .on('end', () => {
-            console.log('Conversão finalizada');
+            console.log('Paleta criada, gerando GIF...');
             
-            if (!fs.existsSync(outputPath)) {
-                console.error('Arquivo não foi criado');
-                safeUnlink(inputPath);
-                return res.status(500).json({ error: 'Falha na criação do GIF' });
-            }
+            // Segundo: criar GIF usando a paleta
+            ffmpeg()
+                .input(inputPath)
+                .input(paletteePath)
+                .outputOptions([
+                    '-filter_complex', 'fps=10,scale=300:300:force_original_aspect_ratio=decrease,pad=300:300:(ow-iw)/2:(oh-ih)/2:color=0x00000000@0[v];[v][1:v]paletteuse=alpha_threshold=128',
+                    '-loop', '0',
+                    '-y'
+                ])
+                .output(outputPath)
+                .on('end', () => {
+                    console.log('GIF com transparência criado');
+                    
+                    if (!fs.existsSync(outputPath)) {
+                        safeUnlink(inputPath);
+                        safeUnlink(paletteePath);
+                        return res.status(500).json({ error: 'Falha na criação do GIF' });
+                    }
 
-            const stats = fs.statSync(outputPath);
-            console.log('GIF criado - tamanho:', stats.size, 'bytes');
+                    const stats = fs.statSync(outputPath);
+                    console.log('GIF final - tamanho:', stats.size, 'bytes');
 
-            res.download(outputPath, 'animation.gif', (err) => {
-                safeUnlink(inputPath);
-                safeUnlink(outputPath);
-                if (err) {
-                    console.error('Erro no download:', err);
-                }
-            });
+                    res.download(outputPath, 'animation.gif', (err) => {
+                        safeUnlink(inputPath);
+                        safeUnlink(paletteePath);
+                        safeUnlink(outputPath);
+                        if (err) {
+                            console.error('Erro no download:', err);
+                        }
+                    });
+                })
+                .on('error', (err) => {
+                    console.error('Erro na criação do GIF:', err.message);
+                    safeUnlink(inputPath);
+                    safeUnlink(paletteePath);
+                    safeUnlink(outputPath);
+                    res.status(500).json({ error: 'Erro na geração do GIF', details: err.message });
+                })
+                .run();
         })
         .on('error', (err) => {
-            console.error('Erro FFmpeg:', err.message);
+            console.error('Erro na criação da paleta:', err.message);
             safeUnlink(inputPath);
-            safeUnlink(outputPath);
-            res.status(500).json({ 
-                error: 'Erro na conversão',
-                details: err.message 
-            });
+            safeUnlink(paletteePath);
+            res.status(500).json({ error: 'Erro na criação da paleta', details: err.message });
         })
         .run();
 });

@@ -12,7 +12,6 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const app = express();
 app.use(cors());
 
-// Criar pasta uploads se nao existir
 const uploadDir = path.join(os.tmpdir(), 'uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
@@ -28,6 +27,10 @@ const storage = multer.diskStorage({
 const upload = multer({ 
     storage: storage,
     limits: { fileSize: 50 * 1024 * 1024 }
+});
+
+app.get('/', (req, res) => {
+    res.send('GIF Converter Server is running!');
 });
 
 app.get('/health', (req, res) => {
@@ -46,7 +49,7 @@ app.post('/convert', upload.single('video'), (req, res) => {
     
     ffmpeg(inputPath)
         .outputOptions([
-            '-vf', 'fps=30,scale=300:-1:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse',
+            '-vf', 'fps=30,scale=300:-1:flags=lanczos',
             '-loop', '0'
         ])
         .output(outputPath)
@@ -58,3 +61,24 @@ app.post('/convert', upload.single('video'), (req, res) => {
                     fs.unlinkSync(inputPath);
                     fs.unlinkSync(outputPath);
                 } catch (e) {
+                    console.error('Erro ao limpar arquivos:', e);
+                }
+            });
+        })
+        .on('error', (err) => {
+            console.error('Erro na conversao:', err);
+            res.status(500).send('Erro na conversao: ' + err.message);
+            
+            try {
+                fs.unlinkSync(inputPath);
+            } catch (e) {
+                console.error('Erro ao limpar:', e);
+            }
+        })
+        .run();
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Servidor rodando na porta ${PORT}`);
+});
